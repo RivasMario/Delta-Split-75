@@ -38,16 +38,29 @@ No zero-length segs, dup vertices, unclosed polylines, or bbox overlaps. Orphan 
 
 ## RP2040 rebuild track
 
-Reference: `docs/reference/rp2040_keyboard_design.md` (Noah Kiser / Gemini extraction).
+References:
+- `docs/reference/rp2040_keyboard_design.md` — Noah-Kiser-derived BOM + routing constants.
+- `docs/reference/nckiser_repos.md` — Noah's GitHub repos cloned to `../../NCKiser_refs/`; template is `le_chiffre_keyboard_stm32`, tutorial artifact is `TKL_VIDEO`.
 
-- [ ] Create `pcb/kicad/` with a fresh KiCad 10.0.1 project.
-- [ ] Import existing gerbers as reference layer (File → Import → Gerber).
-- [ ] Schematic scaffold: RP2040 + W25Q128 QSPI + USB-C + XC6206 LDO + 12 MHz crystal + SRV05-4 ESD + 86× switch/diode.
-- [ ] Extract key grid from `kle/deltasplit75_raw.json` → CSV of (row, col, x_mm, y_mm, w_u) on the 0.79375 mm grid.
-- [ ] Place switch/hotswap/diode footprints on grid; cols top/vertical, rows bottom/horizontal.
-- [ ] Route per §4 hierarchy (USB diff pair → crystal → power → matrix → GND pour + stitching).
-- [ ] Cross-check board outline against `case/` plate DXFs (mounting holes align).
-- [ ] Decide hotswap-vs-solder; if hotswap, apply §3 collision rules for any multi-layout support.
+### Phase 1 — project scaffold
+
+- [ ] Copy `le_chiffre_keyboard_stm32/kicad/pcb/` layout skeleton to `pcb/kicad/`.
+- [ ] Vendor `marbastlib-mx.pretty` + `Keebio-Parts.pretty` + `MX_Alps_Hybrid.pretty` into `pcb/kicad/library/`.
+- [ ] Copy `kibot.yml` → `.github/workflows/` once the KiCad project builds.
+
+### Phase 2 — schematic
+
+- [ ] Open `NCKiser_refs/TKL_VIDEO/TKL_Video/TKL_Video.kicad_sch` in KiCad 10 as workflow study (step through `TKL_Video-backups/` in date order).
+- [ ] Build DeltaSplit schematic: RP2040 (KiCad built-in `MCU_RaspberryPi:RP2040`) + W25Q128 QSPI + HRO TYPE-C-31-M-12 + XC6206 LDO + 12 MHz 3225 crystal + SRV05-4 ESD + 86× switch/diode matrix.
+
+### Phase 3 — PCB layout
+
+- [ ] Import existing DeltaSplit gerbers as reference layer (File → Import → Gerber).
+- [ ] Extract key grid from `kle/deltasplit75_raw.json` → CSV (row, col, x_mm, y_mm, w_u) on the 0.79375 mm grid.
+- [ ] Place switch/hotswap/diode footprints; cols top/vertical, rows bottom/horizontal.
+- [ ] Route per §4 hierarchy (USB diff → crystal → power → matrix → GND pour + stitching).
+- [ ] Cross-check board outline vs `case/` plate DXFs — mounting holes align.
+- [ ] Decide hotswap-vs-solder; if hotswap, apply §3 collision rules for the detachable seam switch.
 
 ## Nice-to-have
 
