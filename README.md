@@ -4,7 +4,12 @@ Fork/mirror of the DeltaSplit75 V2 open-source keyboard: case DXF/DWG files, PCB
 
 ## What this is
 
-DeltaSplit 75 is a **one-piece 75% keyboard with a visual split** (not an ergo split — the two halves are stitched side-by-side into a single case). The PCB is one ~322 × 120 mm board. The case plates are delivered as **left + right DXFs** because the combined ~680 mm width exceeds most laser beds.
+DeltaSplit 75 is a **dual-mode 75% keyboard**:
+
+1. **One-piece mode** — left + right plates butt-join into a single unibody case; all keys present.
+2. **Spread-split mode** — same PCB/plates but mounted in two separate shells with a physical gap between halves. At the seam there's a **detachable switch** that gets populated for one-piece mode and removed (or a blocker inserted) for spread mode.
+
+The PCB is one ~322 × 120 mm board regardless of mode. Plates ship as **left + right DXFs** because the combined ~680 mm width exceeds most laser beds, and because the spread mode needs them as separate parts anyway.
 
 ## Layout
 

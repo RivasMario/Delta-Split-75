@@ -25,7 +25,10 @@ No zero-length segs, dup vertices, unclosed polylines, or bbox overlaps. Orphan 
 
 ## Open
 
-- [ ] Fix orphan lines in MX LEFT, MX RIGHT, ALPS RIGHT, ALPS+MX LEFT before ordering.
+- [ ] **Investigate orphan lines before patching** — DeltaSplit 75 has a detachable seam switch (one-piece mode has it, spread mode omits it). The 1-orphan-line finding in MX LEFT/RIGHT may be an **intentional break-away tab** for the detachable cutout, not a defect. Check coords (257.3, 380.9) LEFT / (269.0, 245.5) RIGHT against the seam-switch position before editing the DXF.
+- [ ] Generate **two KLE JSONs** for `KB_PLATE_VALIDATOR/scripts/build_plate.py`:
+  - `kle/deltasplit75_onepiece.json` — full layout incl. seam switch.
+  - `kle/deltasplit75_spread.json` — seam switch omitted.
 - [ ] Measure Winkeyless + blocked-corner bezel DXFs, populate `PLATES.md` bezel table.
 - [ ] Generate/extract KLE JSON for the DeltaSplit layout so `KB_PLATE_VALIDATOR/scripts/build_plate.py` can consume it.
 - [ ] Mirror LEFT Costars geometry → create RIGHT Costars plate DXF.
