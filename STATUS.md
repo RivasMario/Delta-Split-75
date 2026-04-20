@@ -36,7 +36,19 @@ No zero-length segs, dup vertices, unclosed polylines, or bbox overlaps. Orphan 
 - [ ] Verify gerber file extensions against target fab (`gm1` → `gml`?).
 - [ ] Render case/plate preview PNGs into `docs/` for README.
 
+## RP2040 rebuild track
+
+Reference: `docs/reference/rp2040_keyboard_design.md` (Noah Kiser / Gemini extraction).
+
+- [ ] Create `pcb/kicad/` with a fresh KiCad 10.0.1 project.
+- [ ] Import existing gerbers as reference layer (File → Import → Gerber).
+- [ ] Schematic scaffold: RP2040 + W25Q128 QSPI + USB-C + XC6206 LDO + 12 MHz crystal + SRV05-4 ESD + 86× switch/diode.
+- [ ] Extract key grid from `kle/deltasplit75_raw.json` → CSV of (row, col, x_mm, y_mm, w_u) on the 0.79375 mm grid.
+- [ ] Place switch/hotswap/diode footprints on grid; cols top/vertical, rows bottom/horizontal.
+- [ ] Route per §4 hierarchy (USB diff pair → crystal → power → matrix → GND pour + stitching).
+- [ ] Cross-check board outline against `case/` plate DXFs (mounting holes align).
+- [ ] Decide hotswap-vs-solder; if hotswap, apply §3 collision rules for any multi-layout support.
+
 ## Nice-to-have
 
 - [ ] Source a 3D-printable version of bezel (instead of laser-cut acrylic).
-- [ ] Check if PCB schematic source is recoverable anywhere (only gerbers present, no `.sch`/`.kicad_pcb`).
