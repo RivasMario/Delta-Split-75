@@ -40,27 +40,42 @@ No zero-length segs, dup vertices, unclosed polylines, or bbox overlaps. Orphan 
 
 References:
 - `docs/reference/rp2040_keyboard_design.md` — Noah-Kiser-derived BOM + routing constants.
-- `docs/reference/nckiser_repos.md` — Noah's GitHub repos cloned to `../../NCKiser_refs/`; template is `le_chiffre_keyboard_stm32`, tutorial artifact is `TKL_VIDEO`.
+- `docs/reference/rp2040_designguide_schematic.md` — calliah333 canonical RP2040 reference schematic (ref-designator breakdown).
+- `docs/reference/nckiser_repos.md` — Noah's GitHub repos cloned to `../../NCKiser_refs/`.
+- `docs/reference/kicad_toolchain.md` — install order for KiCad 10 + marbastlib + KLE placer + Keebio-Parts.
+
+### Phase 0 — install toolchain (one-time)
+
+- [ ] Install KiCad 10.0.1.
+- [ ] PCM: install **ebastler/marbastlib** (upstream, not NCKiser fork).
+- [ ] PCM: install **zykrah/kicad-kle-placer** via `https://raw.githubusercontent.com/zykrah/zykrah-kicad-repository/main/repository.json`.
+- [ ] Link `Keebio-Parts.pretty` (from `../../NCKiser_refs/`) in `fp-lib-table`.
 
 ### Phase 1 — project scaffold
 
 - [ ] Copy `le_chiffre_keyboard_stm32/kicad/pcb/` layout skeleton to `pcb/kicad/`.
-- [ ] Vendor `marbastlib-mx.pretty` + `Keebio-Parts.pretty` + `MX_Alps_Hybrid.pretty` into `pcb/kicad/library/`.
+- [ ] Add KiCad project: `pcb/kicad/deltasplit75_rp2040.kicad_pro`.
 - [ ] Copy `kibot.yml` → `.github/workflows/` once the KiCad project builds.
 
-### Phase 2 — schematic
+### Phase 2 — schematic (reference: `docs/reference/rp2040_designguide_schematic.md`)
 
-- [ ] Open `NCKiser_refs/TKL_VIDEO/TKL_Video/TKL_Video.kicad_sch` in KiCad 10 as workflow study (step through `TKL_Video-backups/` in date order).
-- [ ] Build DeltaSplit schematic: RP2040 (KiCad built-in `MCU_RaspberryPi:RP2040`) + W25Q128 QSPI + HRO TYPE-C-31-M-12 + XC6206 LDO + 12 MHz 3225 crystal + SRV05-4 ESD + 86× switch/diode matrix.
+- [ ] Open RP2040-Guide.pdf side-by-side with KiCad; replicate MCU block 1:1 (U3 RP2040, U1 W25Q128, U2 USBLC6 ESD, U4 XC6206 LDO, Y1 12MHz + 22pF + 1kΩ, F1 500mA PTC, SW1 boot button, J2 SWD).
+- [ ] Set exact passive values per the PDF table: 5.1kΩ CC pulldowns, 27Ω USB series, 10µF bulk, 100nF per 3V3 pin, 1µF on 1V1/LDO in/out.
+- [ ] Create hierarchical `key_matrix.kicad_sch` with 86× SW + 86× D + stabilizers. Name SW1…SW86 so KLE-placer can match.
 
 ### Phase 3 — PCB layout
 
 - [ ] Import existing DeltaSplit gerbers as reference layer (File → Import → Gerber).
-- [ ] Extract key grid from `kle/deltasplit75_raw.json` → CSV (row, col, x_mm, y_mm, w_u) on the 0.79375 mm grid.
-- [ ] Place switch/hotswap/diode footprints; cols top/vertical, rows bottom/horizontal.
+- [ ] Place ONE switch + its diode manually at the desired relative offset.
+- [ ] Run **KLE Placer** plugin with `kle/deltasplit75_raw.json` → auto-places remaining 85 switches + diodes on the 0.79375 mm grid.
 - [ ] Route per §4 hierarchy (USB diff → crystal → power → matrix → GND pour + stitching).
 - [ ] Cross-check board outline vs `case/` plate DXFs — mounting holes align.
 - [ ] Decide hotswap-vs-solder; if hotswap, apply §3 collision rules for the detachable seam switch.
+
+### Phase 4 — KLE enrichment for placer
+
+- [ ] Add label-position-4 reference numbers (`1`…`86`) to every key in `kle/deltasplit75_raw.json` — required for **Specific Reference Mode** (needed once any rotated key is introduced).
+- [ ] Add multilayout labels (position 3) if supporting ANSI/ISO/Costar variants on one PCB.
 
 ## Nice-to-have
 
