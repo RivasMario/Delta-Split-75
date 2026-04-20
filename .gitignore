@@ -1,0 +1,18 @@
+# AutoCAD backups
+*.bak
+
+# OS crud
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Python (if we add validator scripts here later)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Output / scratch
+output/
+tmp/
+*.log
