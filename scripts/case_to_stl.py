@@ -104,62 +104,15 @@ def _bridge_dangling(segs, max_gap=5.0):
     return segs + bridges
 
 
-def _bbox_poly(segs):
-    """Return shapely Polygon for the bounding box of all segment endpoints."""
-    xs = [v for x0,y0,x1,y1 in segs for v in (x0,x1)]
-    ys = [v for x0,y0,x1,y1 in segs for v in (y0,y1)]
-    return Polygon([(min(xs),min(ys)),(max(xs),min(ys)),
-                    (max(xs),max(ys)),(min(xs),max(ys))])
-
-
-def _has_odd_dangling(segs):
-    """Return True if an odd number of endpoints can't be paired (broken outer boundary)."""
-    from collections import defaultdict
-    SNAP = 0.02
-    bucket = defaultdict(int)
-    for x0,y0,x1,y1 in segs:
-        bucket[(round(x0/SNAP), round(y0/SNAP))] += 1
-        bucket[(round(x1/SNAP), round(y1/SNAP))] += 1
-    dangling = sum(1 for v in bucket.values() if v == 1)
-    return dangling % 2 == 1  # odd count = can't pair-bridge all gaps
-
-
 def _segs_to_polys(segs, circles):
-    """Convert line segments -> closed polygons using shapely polygonize.
-    1. Bridge paired dangling gaps (< 5 mm).
-    2. Use bounding box as outer when the outer boundary is unrecoverable:
-         - odd number of remaining dangling endpoints, OR
-         - largest polygon < 40% of bbox (boundary split into many small polys).
-    3. Only subtract inner polygons whose area < 15% of bbox (avoids treating
-       large valid regions as holes in complex multi-layout plates).
+    """Convert line segments + circles -> list of closed polygons.
+    Each closed shape is returned as-is — no subtraction, no merging.
+    The DXF already encodes the correct geometry (ring, cutout, etc).
     """
     segs = _bridge_dangling(segs)
     lines = [LineString([(x0,y0),(x1,y1)]) for x0,y0,x1,y1 in segs]
     polys = list(polygonize(unary_union(lines)))
-    all_polys = sorted(polys + circles, key=lambda p: p.area, reverse=True)
-
-    bbox = _bbox_poly(segs)
-    bbox_area = bbox.area
-
-    odd_dangle = _has_odd_dangling(segs)
-    largest_ok = all_polys and (all_polys[0].area >= 0.40 * bbox_area)
-
-    if odd_dangle or not largest_ok:
-        print(f"    (bbox fallback: {'odd dangling' if odd_dangle else 'fragmented outer boundary'})")
-        outer = bbox
-        # only subtract clearly-small polygons (cutouts, holes) not large sub-regions
-        holes = [p for p in all_polys if p.area < 0.15 * bbox_area]
-    else:
-        outer = all_polys[0]
-        holes = all_polys[1:]
-
-    for p in holes:
-        try:
-            if outer.contains(p.centroid):
-                outer = outer.difference(p)
-        except Exception:
-            pass
-    return outer
+    return polys + circles
 
 
 # ── STL extrusion ─────────────────────────────────────────────────────────────
@@ -215,7 +168,20 @@ def _extrude_to_stl(poly, thickness, z_base=0.0):
 
 # ── middle stack ──────────────────────────────────────────────────────────────
 
+def _polys_to_mesh(polys, thickness, z_base=0.0):
+    """Extrude a list of polygons to thickness and combine into one Mesh."""
+    meshes = []
+    for poly in polys:
+        m = _extrude_to_stl(poly, thickness, z_base=z_base)
+        if m:
+            meshes.append(m)
+    if not meshes:
+        return None
+    return Mesh(np.concatenate([m.data for m in meshes]))
+
+
 def process_middle(dxf_path, layer_thickness):
+    """Split 5-layer stacked DXF by Y band; extrude each layer's polys at z = i*thickness."""
     doc_dxf = ezdxf.readfile(dxf_path)
     msp = doc_dxf.modelspace()
     ys = sorted((e.dxf.start.y+e.dxf.end.y)/2 for e in msp if e.dxftype()=="LINE")
@@ -223,23 +189,23 @@ def process_middle(dxf_path, layer_thickness):
     band = (y_max - y_min) / 5
     bounds = [y_min + i*band for i in range(6)]
 
-    meshes = []
+    all_meshes = []
     for i in range(5):
         segs, circles = _dxf_to_lines(msp, bounds[i]-EPS, bounds[i+1]+EPS)
-        poly = _segs_to_polys(segs, circles)
-        if poly is None:
-            print(f"  WARN: layer {i} produced no polygon — skipped")
+        polys = _segs_to_polys(segs, circles)
+        if not polys:
+            print(f"  WARN: layer {i} no polygons")
             continue
         z_off = i * layer_thickness
-        m = _extrude_to_stl(poly, layer_thickness, z_base=z_off)
+        m = _polys_to_mesh(polys, layer_thickness, z_base=z_off)
         if m:
-            meshes.append(m)
-        print(f"  layer {i}: poly area={poly.area:.0f} mm2, z={z_off:.1f}-{z_off+layer_thickness:.1f} mm")
+            all_meshes.append(m)
+        total_area = sum(p.area for p in polys)
+        print(f"  layer {i}: {len(polys)} polys total area={total_area:.0f} mm2, z={z_off:.1f}-{z_off+layer_thickness:.1f} mm")
 
-    if not meshes:
+    if not all_meshes:
         return None
-    combined = Mesh(np.concatenate([m.data for m in meshes]))
-    return combined
+    return Mesh(np.concatenate([m.data for m in all_meshes]))
 
 
 # ── single layer ──────────────────────────────────────────────────────────────
@@ -248,10 +214,13 @@ def process_single(dxf_path, thickness):
     doc_dxf = ezdxf.readfile(dxf_path)
     msp = doc_dxf.modelspace()
     segs, circles = _dxf_to_lines(msp)
-    poly = _segs_to_polys(segs, circles)
-    if poly is None:
+    polys = _segs_to_polys(segs, circles)
+    if not polys:
         return None
-    return _extrude_to_stl(poly, thickness)
+    n = len(polys)
+    total = sum(p.area for p in polys)
+    print(f"    {n} polys, total area={total:.0f} mm2")
+    return _polys_to_mesh(polys, thickness)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
