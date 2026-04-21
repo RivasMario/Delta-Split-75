@@ -9,6 +9,7 @@ Output: output/3d/*.stl
 import os, math
 import numpy as np
 import ezdxf
+import mapbox_earcut as earcut
 from shapely.geometry import Polygon, MultiPolygon, LineString
 from shapely.ops import unary_union, polygonize
 from stl.mesh import Mesh
@@ -124,15 +125,31 @@ def _all_polys_from_segs(segs, circles):
 # ── STL extrusion ─────────────────────────────────────────────────────────────
 
 def _triangulate_polygon(poly):
-    """Return list of triangles [(p0,p1,p2), ...] for a shapely Polygon."""
-    from shapely.ops import triangulate as delaunay_triangulate
-    tris = delaunay_triangulate(poly, tolerance=0.01)
-    result = []
-    for tri in tris:
-        if poly.contains(tri.centroid):
-            coords = list(tri.exterior.coords)[:-1]
-            result.append(coords)
-    return result
+    """Return list of triangles [(p0,p1,p2), ...] for a shapely Polygon with holes.
+    Uses mapbox-earcut constrained triangulation (respects interior rings as holes).
+    """
+    if poly.is_empty or not hasattr(poly, 'exterior'):
+        return []
+    ext = list(poly.exterior.coords)[:-1]  # drop duplicate closing vertex
+    rings = [ext]
+    for interior in poly.interiors:
+        rings.append(list(interior.coords)[:-1])
+
+    flat = np.array([pt for ring in rings for pt in ring], dtype=np.float64)
+    # mapbox_earcut ring_end_indices: END index of exterior + END of each hole
+    ring_ends = []
+    cursor = 0
+    for ring in rings:
+        cursor += len(ring)
+        ring_ends.append(cursor)
+    ring_arr = np.array(ring_ends, dtype=np.uint32)
+    result_idx = earcut.triangulate_float64(flat, ring_arr)
+
+    tris = []
+    for i in range(0, len(result_idx), 3):
+        a, b, c = result_idx[i], result_idx[i+1], result_idx[i+2]
+        tris.append([tuple(flat[a]), tuple(flat[b]), tuple(flat[c])])
+    return tris
 
 
 def _extrude_to_stl(poly, thickness, z_base=0.0):
