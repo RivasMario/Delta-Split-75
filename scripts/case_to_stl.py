@@ -19,24 +19,27 @@ os.makedirs(OUT, exist_ok=True)
 
 EPS = 0.05   # mm snap tolerance
 
+# (rel_path, thickness_mm, is_middle, mode)
+# mode "direct"   -> extrude each closed polygon as-is (bezels, bottom, middle)
+# mode "subtract" -> largest polygon OR bbox minus all cutouts (plates)
 LAYERS = {
-    "bezel_standard":     (r"case/bezel/top bezel - Standard.dxf",          3.0,  False),
-    "bezel_winkeyless":   (r"case/bezel/top bezel - Winkeyless.dxf",         3.0,  False),
-    "bezel_blocked":      (r"case/bezel/top bezel - blocked corner.dxf",     3.0,  False),
-    "plate_left_mx":      (r"case/left/plate/MX LEFT B.dxf",                 1.5,  False),
-    "plate_left_alps":    (r"case/left/plate/ALPS LEFT B.dxf",               1.5,  False),
-    "plate_left_alpsmx":  (r"case/left/plate/ALPS+MX LEFT B.dxf",            1.5,  False),
-    "plate_left_costars": (r"case/left/plate/MX LEFT B COSTARS.dxf",         1.5,  False),
-    "plate_right_mx":     (r"case/right/plate/MX RIGHT B.dxf",               1.5,  False),
-    "plate_right_alps":   (r"case/right/plate/ALPS RIGHT B.dxf",             1.5,  False),
-    "plate_right_alpsmx": (r"case/right/plate/ALPS+MX RIGHT B.dxf",          1.5,  False),
-    "bottom_left":        (r"case/left/bottom/Bottom Layer - LEFT B.dxf",    3.0,  False),
-    "bottom_right":       (r"case/right/bottom/bottom layers - RIGHT B.dxf", 3.0,  False),
-    "middle_left":        (r"case/left/middle/Middle layers - LEFT B.dxf",   3.0,  True),
-    "middle_right":       (r"case/right/middle/middle layers - RIGHT B.dxf", 3.0,  True),
+    "bezel_standard":     (r"case/bezel/top bezel - Standard.dxf",          3.0,  False, "direct"),
+    "bezel_winkeyless":   (r"case/bezel/top bezel - Winkeyless.dxf",         3.0,  False, "direct"),
+    "bezel_blocked":      (r"case/bezel/top bezel - blocked corner.dxf",     3.0,  False, "direct"),
+    "plate_left_mx":      (r"case/left/plate/MX LEFT B.dxf",                 1.5,  False, "subtract"),
+    "plate_left_alps":    (r"case/left/plate/ALPS LEFT B.dxf",               1.5,  False, "subtract"),
+    "plate_left_alpsmx":  (r"case/left/plate/ALPS+MX LEFT B.dxf",            1.5,  False, "subtract"),
+    "plate_left_costars": (r"case/left/plate/MX LEFT B COSTARS.dxf",         1.5,  False, "subtract"),
+    "plate_right_mx":     (r"case/right/plate/MX RIGHT B.dxf",               1.5,  False, "subtract"),
+    "plate_right_alps":   (r"case/right/plate/ALPS RIGHT B.dxf",             1.5,  False, "subtract"),
+    "plate_right_alpsmx": (r"case/right/plate/ALPS+MX RIGHT B.dxf",          1.5,  False, "subtract"),
+    "bottom_left":        (r"case/left/bottom/Bottom Layer - LEFT B.dxf",    3.0,  False, "direct"),
+    "bottom_right":       (r"case/right/bottom/bottom layers - RIGHT B.dxf", 3.0,  False, "direct"),
+    "middle_left":        (r"case/left/middle/Middle layers - LEFT B.dxf",   3.0,  True,  "direct"),
+    "middle_right":       (r"case/right/middle/middle layers - RIGHT B.dxf", 3.0,  True,  "direct"),
 }
 
-# ── DXF → shapely polygons ────────────────────────────────────────────────────
+# ── DXF -> shapely polygons ────────────────────────────────────────────────────
 
 def _circle_pts(cx, cy, r, n=64):
     angles = np.linspace(0, 2*math.pi, n, endpoint=False)
@@ -104,15 +107,18 @@ def _bridge_dangling(segs, max_gap=5.0):
     return segs + bridges
 
 
-def _segs_to_polys(segs, circles):
-    """Convert line segments + circles -> list of closed polygons.
-    Each closed shape is returned as-is — no subtraction, no merging.
-    The DXF already encodes the correct geometry (ring, cutout, etc).
-    """
+def _bbox_poly(segs):
+    """Bounding box polygon enclosing all segment endpoints."""
+    xs = [c for x0,y0,x1,y1 in segs for c in (x0,x1)]
+    ys = [c for x0,y0,x1,y1 in segs for c in (y0,y1)]
+    return Polygon([(min(xs),min(ys)),(max(xs),min(ys)),(max(xs),max(ys)),(min(xs),max(ys))])
+
+
+def _all_polys_from_segs(segs, circles):
     segs = _bridge_dangling(segs)
     lines = [LineString([(x0,y0),(x1,y1)]) for x0,y0,x1,y1 in segs]
     polys = list(polygonize(unary_union(lines)))
-    return polys + circles
+    return segs, polys + circles
 
 
 # ── STL extrusion ─────────────────────────────────────────────────────────────
@@ -144,7 +150,7 @@ def _extrude_to_stl(poly, thickness, z_base=0.0):
         faces.append([p0b, p2b, p1b])  # bottom (reversed = outward normal down)
         faces.append([p0t, p1t, p2t])  # top
 
-    # side walls from polygon exterior ring
+    # side walls from polygon exterior + interior rings
     rings = [poly.exterior] + list(poly.interiors) if hasattr(poly, 'exterior') else []
     for ring in rings:
         coords = list(ring.coords)
@@ -166,8 +172,6 @@ def _extrude_to_stl(poly, thickness, z_base=0.0):
     return mesh
 
 
-# ── middle stack ──────────────────────────────────────────────────────────────
-
 def _polys_to_mesh(polys, thickness, z_base=0.0):
     """Extrude a list of polygons to thickness and combine into one Mesh."""
     meshes = []
@@ -179,6 +183,50 @@ def _polys_to_mesh(polys, thickness, z_base=0.0):
         return None
     return Mesh(np.concatenate([m.data for m in meshes]))
 
+
+# ── plate mode (subtract) ─────────────────────────────────────────────────────
+
+def process_subtract(dxf_path, thickness):
+    """Plate: extrude material polygons (those with interior holes = switch cutouts).
+    Fallback: bbox minus all cutout polys when outer boundary is broken.
+    """
+    doc_dxf = ezdxf.readfile(dxf_path)
+    msp = doc_dxf.modelspace()
+    raw_segs, circles = _dxf_to_lines(msp)
+    bridged_segs, all_polys = _all_polys_from_segs(raw_segs, circles)
+
+    # Polygons with interior holes already encode the plate material (outer - cutouts).
+    # They appear when polygonize finds the plate boundary as a closed polygon.
+    material = [p for p in all_polys if len(list(p.interiors)) > 0]
+
+    if material:
+        total = sum(p.area for p in material)
+        total_holes = sum(len(list(p.interiors)) for p in material)
+        print(f"    {len(material)} material section(s), {total_holes} holes, area={total:.0f} mm2")
+        return _polys_to_mesh(material, thickness)
+
+    # Fallback: outer boundary broken — use bbox minus all found polys (all are cutouts)
+    bbox = _bbox_poly(bridged_segs)
+    if not all_polys:
+        print(f"    no polys found, extruding bbox (area={bbox.area:.0f} mm2)")
+        plate = bbox
+    else:
+        cutouts = unary_union(all_polys)
+        plate = bbox.difference(cutouts)
+        print(f"    boundary broken, bbox({bbox.area:.0f}) - {len(all_polys)} cutouts = {plate.area:.0f} mm2 ({plate.geom_type})")
+
+    if plate.is_empty:
+        return None
+    if plate.geom_type == "MultiPolygon":
+        geoms = list(plate.geoms)
+    elif plate.geom_type == "Polygon":
+        geoms = [plate]
+    else:
+        geoms = [g for g in plate.geoms if g.geom_type == "Polygon"]
+    return _polys_to_mesh(geoms, thickness)
+
+
+# ── middle stack ──────────────────────────────────────────────────────────────
 
 def process_middle(dxf_path, layer_thickness):
     """Split 5-layer stacked DXF by Y band; extrude each layer's polys at z = i*thickness."""
@@ -192,7 +240,7 @@ def process_middle(dxf_path, layer_thickness):
     all_meshes = []
     for i in range(5):
         segs, circles = _dxf_to_lines(msp, bounds[i]-EPS, bounds[i+1]+EPS)
-        polys = _segs_to_polys(segs, circles)
+        _, polys = _all_polys_from_segs(segs, circles)
         if not polys:
             print(f"  WARN: layer {i} no polygons")
             continue
@@ -208,13 +256,13 @@ def process_middle(dxf_path, layer_thickness):
     return Mesh(np.concatenate([m.data for m in all_meshes]))
 
 
-# ── single layer ──────────────────────────────────────────────────────────────
+# ── single layer (direct) ─────────────────────────────────────────────────────
 
 def process_single(dxf_path, thickness):
     doc_dxf = ezdxf.readfile(dxf_path)
     msp = doc_dxf.modelspace()
     segs, circles = _dxf_to_lines(msp)
-    polys = _segs_to_polys(segs, circles)
+    _, polys = _all_polys_from_segs(segs, circles)
     if not polys:
         return None
     n = len(polys)
@@ -227,16 +275,24 @@ def process_single(dxf_path, thickness):
 
 def run():
     print("=== DeltaSplit 75 -> STL ===\n")
-    for name, (rel_path, thickness, is_middle) in LAYERS.items():
+    for name, (rel_path, thickness, is_middle, mode) in LAYERS.items():
         dxf_path = os.path.join(BASE, rel_path)
         if not os.path.exists(dxf_path):
             print(f"SKIP (not found): {name}")
             continue
-        label = f"{'[MIDDLE 5-layer fused 15mm]' if is_middle else f'[{thickness} mm]'}"
+        if is_middle:
+            label = "[MIDDLE 5-layer 15mm]"
+        else:
+            label = f"[{thickness} mm {mode}]"
         print(f"{name}  {label}")
         try:
-            mesh = (process_middle(dxf_path, thickness) if is_middle
-                    else process_single(dxf_path, thickness))
+            if is_middle:
+                mesh = process_middle(dxf_path, thickness)
+            elif mode == "subtract":
+                mesh = process_subtract(dxf_path, thickness)
+            else:
+                mesh = process_single(dxf_path, thickness)
+
             if mesh is None:
                 print(f"  ERROR: no mesh produced\n")
                 continue
@@ -244,7 +300,10 @@ def run():
             mesh.save(out_path)
             print(f"  -> {out_path}\n")
         except Exception as ex:
-            print(f"  ERROR: {ex}\n")
+            import traceback
+            print(f"  ERROR: {ex}")
+            traceback.print_exc()
+            print()
     print("Done.")
 
 
