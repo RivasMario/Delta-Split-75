@@ -36,6 +36,43 @@ No zero-length segs, dup vertices, unclosed polylines, or bbox overlaps. Orphan 
 - [ ] Verify gerber file extensions against target fab (`gm1` → `gml`?).
 - [ ] Render case/plate preview PNGs into `docs/` for README.
 
+## PCB reverse-engineering findings (2026-04-21)
+
+Gerber silkscreen (`output/pcb_preview/F.SilkS.png`) + drill analysis (`pcb/gerbers/split left*.drl`):
+
+- **Designer/year**: `DeltaSplit75 R2 xyxjj 2017`.
+- **MCU**: socketed **ProMicro** daughterboard (2× 12-pin headers per half, 48× Ø1.016mm PTH), not SMT ATmega32u4.
+- **Inter-half link**: TRRS 4-pin jack (marked `4PIN` on silk; 9× Ø0.991mm PTH matches 2× 4-pin jacks + mounting).
+- **Per-key (86 switches)**: 5-pin MX footprint — 2× Ø1.499mm PTH signal, 2× Ø1.702mm NPTH plastic posts, 1× Ø3.988mm NPTH center post. Plus 1N4148 diode per key.
+- **Mounting**: 12× Ø3.048mm NPTH = M3 case screws.
+- **Stabilizers**: PCB-mount (additional Ø1.702/Ø3.988 NPTH beyond 86-switch count).
+- **On-silk assembly order**: "1. Diodes → 2. ProMicro headers → 4. TRRS jacks → 5. Switches → 6. ProMicro. **INSTALL PRO MICRO LAST**."
+- **B1/B2 switches**: dual-switch position in bottom row (confirms snap-off position note in `PLATES.md`).
+
+Implication: **no MCU/crystal/USB on the board** — all on ProMicro module. Schematic reduces to matrix + 2× ProMicro headers + 2× TRRS. Trivial compared to a full ATmega32u4 build.
+
+## Phase A — recreate original PCB in KiCad
+
+Target project: `pcb/DeltaSplit_ProMicro.{kicad_pro,kicad_pcb}` (bootstrapped via `GerbView → File → Export → Export to Pcbnew`).
+
+- [x] Export gerbers to `.kicad_pcb` via GerbView (graphics-only, no nets).
+- [ ] Build schematic `pcb/DeltaSplit_ProMicro.kicad_sch`:
+  - 86× `SW?` (marbastlib MX hotswap or solder footprint) + 86× `D?` (1N4148, THT DO-35 or SOD-123).
+  - 2× ProMicro 12-pin header pair (Keebio-Parts `ProMicro.kicad_mod`).
+  - 2× TRRS 4-pin jack (`PJ-320A` — check marbastlib-various or Keebio-Parts).
+  - PCB-mount stabilizers for space/shift/backspace/enter (marbastlib `Stabilizer_Cherry_MX`).
+  - Matrix wiring: rows × cols per ProMicro GPIO.
+- [ ] Import netlist to existing `.kicad_pcb`.
+- [ ] Place footprints over gerber-graphics by matching pad centers; KLE Placer for switch grid after anchor switch placed.
+- [ ] Route to match visible copper — or use schematic-driven clean routing; rip graphics once done.
+- [ ] ERC + DRC clean.
+
+## Phase B — RP2040 drop-in (revised)
+
+Easiest: **ProMicro RP2040 module** (Elite-Pi / 0xCB Helios / SparkFun). Pin-compatible with existing ProMicro headers → **zero PCB/schematic changes**. Just flash QMK/KMK with RP2040 matrix config.
+
+Harder direct-SMT RP2040 path (calliah333 schematic) only if dropping daughterboard for cost/slim-profile reasons.
+
 ## RP2040 rebuild track
 
 References:
@@ -43,6 +80,9 @@ References:
 - `docs/reference/rp2040_designguide_schematic.md` — calliah333 canonical RP2040 reference schematic (ref-designator breakdown).
 - `docs/reference/nckiser_repos.md` — Noah's GitHub repos cloned to `../../NCKiser_refs/`.
 - `docs/reference/kicad_toolchain.md` — install order for KiCad 10 + marbastlib + KLE placer + Keebio-Parts.
+
+**RP2040 port strategy** (revised given ProMicro-based original):
+Easiest path = **drop-in ProMicro-RP2040 daughterboard**: Elite-Pi, 0xCB Helios, or SparkFun ProMicro RP2040. Pin-compatible with original ProMicro headers → zero PCB changes needed for RP2040. The calliah333 full-SMT RP2040 schematic is only relevant if going direct-SMT MCU (harder rebuild, more components).
 
 ### Phase 0 — install toolchain (one-time)
 

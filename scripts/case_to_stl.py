@@ -73,8 +73,45 @@ def _dxf_to_lines(msp, y_lo=None, y_hi=None):
             n = max(8, int((ea-sa)/(math.pi/16)))
             angles = np.linspace(sa, ea, n)
             pts = [(cx+r*math.cos(a), cy+r*math.sin(a)) for a in angles]
-            if len(pts) >= 2:
-                segs.append((pts[0][0], pts[0][1], pts[-1][0], pts[-1][1]))
+            for k in range(len(pts)-1):
+                segs.append((pts[k][0], pts[k][1], pts[k+1][0], pts[k+1][1]))
+        elif t == "LWPOLYLINE":
+            pts = [(x, y) for x, y, *_ in e.get_points("xy")]
+            closed = bool(e.closed)
+            if not pts:
+                continue
+            mx = sum(x for x, _ in pts) / len(pts)
+            my = sum(y for _, y in pts) / len(pts)
+            if y_lo is not None and not (y_lo <= my <= y_hi):
+                continue
+            for k in range(len(pts)-1):
+                x0, y0 = pts[k]
+                x1, y1 = pts[k+1]
+                if math.hypot(x1-x0, y1-y0) >= EPS:
+                    segs.append((x0, y0, x1, y1))
+            if closed and len(pts) >= 3:
+                x0, y0 = pts[-1]
+                x1, y1 = pts[0]
+                if math.hypot(x1-x0, y1-y0) >= EPS:
+                    segs.append((x0, y0, x1, y1))
+        elif t == "POLYLINE":
+            vtx = [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices]
+            if not vtx:
+                continue
+            mx = sum(x for x, _ in vtx) / len(vtx)
+            my = sum(y for _, y in vtx) / len(vtx)
+            if y_lo is not None and not (y_lo <= my <= y_hi):
+                continue
+            for k in range(len(vtx)-1):
+                x0, y0 = vtx[k]
+                x1, y1 = vtx[k+1]
+                if math.hypot(x1-x0, y1-y0) >= EPS:
+                    segs.append((x0, y0, x1, y1))
+            if e.is_closed and len(vtx) >= 3:
+                x0, y0 = vtx[-1]
+                x1, y1 = vtx[0]
+                if math.hypot(x1-x0, y1-y0) >= EPS:
+                    segs.append((x0, y0, x1, y1))
     return segs, circles
 
 
@@ -115,11 +152,77 @@ def _bbox_poly(segs):
     return Polygon([(min(xs),min(ys)),(max(xs),min(ys)),(max(xs),max(ys)),(min(xs),max(ys))])
 
 
+def _snap_segs(segs, grid=1e-3):
+    """Round segment endpoints to a grid so float noise doesn't break polygonize."""
+    out = []
+    for x0, y0, x1, y1 in segs:
+        x0 = round(x0 / grid) * grid
+        y0 = round(y0 / grid) * grid
+        x1 = round(x1 / grid) * grid
+        y1 = round(y1 / grid) * grid
+        if math.hypot(x1-x0, y1-y0) >= EPS:
+            out.append((x0, y0, x1, y1))
+    return out
+
+
 def _all_polys_from_segs(segs, circles):
+    segs = _snap_segs(segs)
     segs = _bridge_dangling(segs)
     lines = [LineString([(x0,y0),(x1,y1)]) for x0,y0,x1,y1 in segs]
     polys = list(polygonize(unary_union(lines)))
     return segs, polys + circles
+
+
+def _nest_polys(polys):
+    """Group polys into shells with holes by geometric containment.
+
+    Walks largest->smallest to assign each polygon an immediate parent (smallest
+    enclosing larger poly). Even-depth polys become shells; odd-depth become
+    holes of their parent shell. Depth-2 (island inside a hole) starts a new shell.
+
+    Uses shell-only polygons (strips any pre-existing interior rings) for the
+    containment check, so holes already baked in by polygonize don't block
+    nesting of the standalone duplicate polys that polygonize also emits.
+    """
+    shell_only = []
+    for p in polys:
+        if hasattr(p, 'exterior') and len(list(p.exterior.coords)) >= 4:
+            shell_only.append(Polygon(list(p.exterior.coords)))
+        else:
+            shell_only.append(p)
+
+    order = sorted(range(len(polys)), key=lambda i: -shell_only[i].area)
+    parent = {}
+    for pos, i in enumerate(order):
+        best_parent = None
+        best_area = float('inf')
+        for j in order[:pos]:
+            if shell_only[j].area <= shell_only[i].area:
+                continue
+            if shell_only[j].contains(shell_only[i]):
+                if shell_only[j].area < best_area:
+                    best_parent = j
+                    best_area = shell_only[j].area
+        parent[i] = best_parent
+
+    depth = {}
+    def get_depth(i):
+        if i in depth:
+            return depth[i]
+        depth[i] = 0 if parent[i] is None else get_depth(parent[i]) + 1
+        return depth[i]
+    for i in order:
+        get_depth(i)
+
+    shells = []
+    for i in order:
+        if depth[i] % 2 != 0:
+            continue
+        ext = list(shell_only[i].exterior.coords)
+        holes = [list(shell_only[j].exterior.coords)
+                 for j in order if parent.get(j) == i and depth[j] % 2 == 1]
+        shells.append(Polygon(ext, holes=holes) if holes else Polygon(ext))
+    return shells
 
 
 # ── STL extrusion ─────────────────────────────────────────────────────────────
@@ -203,6 +306,34 @@ def _polys_to_mesh(polys, thickness, z_base=0.0):
 
 # ── plate mode (subtract) ─────────────────────────────────────────────────────
 
+def _inject_circle_holes(material_polys, circles):
+    """Add each circle as an interior ring of whichever material poly contains it.
+    Circles are fed as separate shapely Polygons (from CIRCLE entities) and never
+    reach polygonize, so we stitch them in here.
+    """
+    result = []
+    for m in material_polys:
+        if not hasattr(m, 'exterior'):
+            result.append(m)
+            continue
+        ext = list(m.exterior.coords)
+        holes = [list(r.coords) for r in m.interiors]
+        shell_only = Polygon(ext)
+        for c in circles:
+            if not shell_only.contains(c.centroid):
+                continue
+            # Skip if circle already falls inside an existing interior ring
+            already = False
+            for h_coords in holes:
+                if Polygon(h_coords).contains(c.centroid):
+                    already = True
+                    break
+            if not already:
+                holes.append(list(c.exterior.coords))
+        result.append(Polygon(ext, holes=holes) if holes else m)
+    return result
+
+
 def process_subtract(dxf_path, thickness):
     """Plate: extrude material polygons (those with interior holes = switch cutouts).
     Fallback: bbox minus all cutout polys when outer boundary is broken.
@@ -217,20 +348,39 @@ def process_subtract(dxf_path, thickness):
     material = [p for p in all_polys if len(list(p.interiors)) > 0]
 
     if material:
+        material = _inject_circle_holes(material, circles)
         total = sum(p.area for p in material)
         total_holes = sum(len(list(p.interiors)) for p in material)
         print(f"    {len(material)} material section(s), {total_holes} holes, area={total:.0f} mm2")
         return _polys_to_mesh(material, thickness)
 
-    # Fallback: outer boundary broken — use bbox minus all found polys (all are cutouts)
-    bbox = _bbox_poly(bridged_segs)
+    # Fallback: outer boundary broken — cluster cutouts by x-gap, per-half bbox minus per-half cutouts.
     if not all_polys:
+        bbox = _bbox_poly(bridged_segs)
         print(f"    no polys found, extruding bbox (area={bbox.area:.0f} mm2)")
         plate = bbox
     else:
-        cutouts = unary_union(all_polys)
-        plate = bbox.difference(cutouts)
-        print(f"    boundary broken, bbox({bbox.area:.0f}) - {len(all_polys)} cutouts = {plate.area:.0f} mm2 ({plate.geom_type})")
+        # Cluster cutouts into two halves by biggest x-gap between centroids.
+        cents = sorted(((p.centroid.x, p) for p in all_polys), key=lambda t: t[0])
+        gaps = [(cents[i+1][0] - cents[i][0], i) for i in range(len(cents)-1)]
+        gaps.sort(reverse=True)
+        if gaps and gaps[0][0] > 20.0:  # >20mm gap = separate halves
+            split_idx = gaps[0][1]
+            left = [p for _, p in cents[:split_idx+1]]
+            right = [p for _, p in cents[split_idx+1:]]
+            halves = []
+            for group in (left, right):
+                gb = _bbox_poly([(p.bounds[0], p.bounds[1], p.bounds[2], p.bounds[3]) for p in group])
+                cut = unary_union(group)
+                halves.append(gb.difference(cut))
+            from shapely.geometry import MultiPolygon as MP
+            plate = unary_union(halves)
+            print(f"    boundary broken, clustered into 2 halves: {len(left)}/{len(right)} cutouts, area={plate.area:.0f} mm2")
+        else:
+            bbox = _bbox_poly(bridged_segs)
+            cutouts = unary_union(all_polys)
+            plate = bbox.difference(cutouts)
+            print(f"    boundary broken, bbox({bbox.area:.0f}) - {len(all_polys)} cutouts = {plate.area:.0f} mm2 ({plate.geom_type})")
 
     if plate.is_empty:
         return None
@@ -245,32 +395,38 @@ def process_subtract(dxf_path, thickness):
 
 # ── middle stack ──────────────────────────────────────────────────────────────
 
-def process_middle(dxf_path, layer_thickness):
-    """Split 5-layer stacked DXF by Y band; extrude each layer's polys at z = i*thickness."""
+def process_middle(dxf_path, thickness):
+    """Sheet holds 5 identical copies stacked in Y. Extract one band, extrude as a single layer.
+    User prints the resulting STL multiple times to build the middle stack.
+    """
     doc_dxf = ezdxf.readfile(dxf_path)
     msp = doc_dxf.modelspace()
     ys = sorted((e.dxf.start.y+e.dxf.end.y)/2 for e in msp if e.dxftype()=="LINE")
     y_min, y_max = min(ys), max(ys)
     band = (y_max - y_min) / 5
-    bounds = [y_min + i*band for i in range(6)]
 
-    all_meshes = []
+    # Try each band, pick the one with the most polygons (most complete copy).
+    best = None
     for i in range(5):
-        segs, circles = _dxf_to_lines(msp, bounds[i]-EPS, bounds[i+1]+EPS)
+        y_lo = y_min + i*band - EPS
+        y_hi = y_min + (i+1)*band + EPS
+        segs, circles = _dxf_to_lines(msp, y_lo, y_hi)
         _, polys = _all_polys_from_segs(segs, circles)
         if not polys:
-            print(f"  WARN: layer {i} no polygons")
             continue
-        z_off = i * layer_thickness
-        m = _polys_to_mesh(polys, layer_thickness, z_base=z_off)
-        if m:
-            all_meshes.append(m)
-        total_area = sum(p.area for p in polys)
-        print(f"  layer {i}: {len(polys)} polys total area={total_area:.0f} mm2, z={z_off:.1f}-{z_off+layer_thickness:.1f} mm")
+        area = sum(p.area for p in polys)
+        if best is None or len(polys) > best[1] or (len(polys) == best[1] and area > best[2]):
+            best = (i, len(polys), area, polys)
 
-    if not all_meshes:
+    if best is None:
+        print("    WARN: no polygons found in any band")
         return None
-    return Mesh(np.concatenate([m.data for m in all_meshes]))
+
+    i, npolys, area, polys = best
+    shells = _nest_polys(polys)
+    total_holes = sum(len(list(s.interiors)) for s in shells)
+    print(f"    1 of 5 copies (band {i}): {len(shells)} shells, {total_holes} through-holes, area={sum(s.area for s in shells):.0f} mm2")
+    return _polys_to_mesh(shells, thickness)
 
 
 # ── single layer (direct) ─────────────────────────────────────────────────────
@@ -282,10 +438,11 @@ def process_single(dxf_path, thickness):
     _, polys = _all_polys_from_segs(segs, circles)
     if not polys:
         return None
-    n = len(polys)
-    total = sum(p.area for p in polys)
-    print(f"    {n} polys, total area={total:.0f} mm2")
-    return _polys_to_mesh(polys, thickness)
+    shells = _nest_polys(polys)
+    total = sum(s.area for s in shells)
+    total_holes = sum(len(list(s.interiors)) for s in shells)
+    print(f"    {len(shells)} shells, {total_holes} through-holes, area={total:.0f} mm2")
+    return _polys_to_mesh(shells, thickness)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -298,7 +455,7 @@ def run():
             print(f"SKIP (not found): {name}")
             continue
         if is_middle:
-            label = "[MIDDLE 5-layer 15mm]"
+            label = f"[middle {thickness} mm, 1 of 5 copies]"
         else:
             label = f"[{thickness} mm {mode}]"
         print(f"{name}  {label}")
