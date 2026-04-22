@@ -37,14 +37,18 @@ archive/
 
 ## Stackup (top → bottom)
 
-| Qty | Thickness | Material | Layer |
-|----|-----------|----------|-------|
-| 2  | 3.0 mm   | acrylic  | top bezel |
-| 1  | 1.5 mm   | aluminium | switch plate |
-| 5  | 3.0 mm   | acrylic  | middle |
-| 1  | 3.0 mm   | acrylic  | bottom |
+Designed for **3D printing** or acrylic stack. Total height ≈ **25.5 mm**.
 
-Total case height ≈ **22.5 mm**.
+| Qty | Component | Notes |
+|----|-----------|-------|
+| 1  | Top Bezel | 3D print (one piece) |
+| 2  | Switch Plates | Left + Right, 1.5mm Alu or 3D print |
+| 2  | Mid Shells | Left + Right halves |
+| 2  | Bottom Bases | Left + Right halves |
+
+## Interconnect
+*   **Original:** TRRS (unsafe hot-plugging).
+*   **Modern (RP2040 Build):** USB-C to USB-C link.
 
 ## 3D print quantities (STLs in `output/3d/`)
 

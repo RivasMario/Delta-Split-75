@@ -1,32 +1,25 @@
 # Build / Fab Order Guide
 
-## PCB
+## PCB (RP2040 SMD Version)
 
-- Single board, ~322 × 120 mm, 2-layer.
-- Gerbers in `pcb/gerbers/` — KiCad 4.0.6 output, format 4.6 mm absolute.
-- File naming uses `split left-*` as prefix (project name, not a half). All 11 standard gerber+drill files present:
-  - F.Cu / B.Cu / F.Mask / B.Mask / F.SilkS / B.SilkS / F.Paste / B.Paste / Edge.Cuts / `.drl` / `NPTH.drl`.
-- Fab: JLCPCB / PCBWay accept this set as-is. Rename `split left-Edge.Cuts.gm1` → `*-Edge_Cuts.gml` if fab requires standard extension.
+- Single board designed to be snapped into two halves.
+- MCU: RP2040 (direct SMT).
+- Link: **USB-C to USB-C cable**. 
+- *Caution:* Use a standard USB-C cable. The link uses the CC lines/Differential pairs for serial communication.
 
-## Plates (aluminium)
+## Case (3D Printed)
 
-1. Pick switch variant from `PLATES.md` (MX / ALPS / ALPS+MX / MX Costars).
-2. Send LEFT and RIGHT DXF as **two separate parts** on the SendCutSend quote.
-3. Material: 1.5 mm 5052 aluminium (match original spec).
-4. Finish: raw / clear anodize.
+1. Use STLs in `output/3d/`.
+2. Recommended Material: PETG or PLA+.
+3. Infill: 20-30% Grid for weight and sound dampening.
+4. Hardware: M3 × 30mm screws + M3 nuts.
 
-## Acrylic layers
+## Assembly Order
 
-- **Top bezel**: 2 × 3 mm of chosen variant.
-- **Middle**: 5 × 3 mm per side. Source DXF stacks all 5 in one file — split or let fab cut as-is if bed is big enough.
-- **Bottom**: 1 × 3 mm per side.
-- Pick color; shared mounting holes keep alignment.
-
-## Assembly order
-
-1. Bottom acrylic → middle stack → plate → PCB → switches → bezel.
-2. M2 or M3 through-bolt at each mounting hole (count TBD — measure from plate DXF).
-3. Align left + right halves at the stitch seam before tightening.
+1. Print Left/Right halves.
+2. Snap PCB halves apart.
+3. Install USB-C mid-link jacks.
+4. Bolt through: Bezel → Plate → Shell → Bottom.
 
 ## Open questions
 

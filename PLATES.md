@@ -7,7 +7,7 @@ All plate DXFs are **1.5 mm aluminium**, one per half. BBox from ezdxf parse.
 | MX            | 340.2 × 129.3   | 351.9 × 129.3   | standard MX switch cutouts |
 | ALPS          | present         | present         | |
 | ALPS+MX       | present         | present         | hybrid — both footprints |
-| MX Costars    | 340.2 × 129.3   | **missing**     | Costar stabilizer cutouts; only LEFT exists in source repo |
+| MX Costars    | 340.2 × 129.3   | present         | Costar stabilizer cutouts |
 
 ## Middle layers
 
@@ -32,8 +32,8 @@ Bezel variants are full-width single pieces, not split:
 | Variant        | Size (W×H mm)  |
 |----------------|----------------|
 | Standard       | 345.1 × 129.3  |
-| Winkeyless     | — (check DXF)  |
-| Blocked corner | — (check DXF)  |
+| Winkeyless     | 372.1 × 129.3  |
+| Blocked corner | 345.1 × 129.3  |
 
 ## Stitch seam
 
@@ -45,5 +45,5 @@ Cutout counts between matching left/right variants aren't always symmetric (e.g.
 
 ## Known gaps
 
-- **No RIGHT Costars plate** — either use ALPS+MX as base and edit, or mirror LEFT Costars geometry.
-- **Bezel DXFs not yet measured** for Winkeyless / blocked-corner — populate table.
+- **Bezel DXFs measured** for Winkeyless / blocked-corner.
+- **RIGHT Costars plate created** by mirroring/translating stabilized geometry.

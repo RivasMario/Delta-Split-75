@@ -99,6 +99,17 @@ def lint(path: Path):
             if ax1 < bx2 and bx1 < ax2 and ay1 < by2 and by1 < ay2:
                 overlaps += 1
 
+    # Calculate total bbox
+    all_xs = []
+    all_ys = []
+    for e in msp:
+        bb = bbox(e)
+        if bb:
+            all_xs.extend([bb[0], bb[2]])
+            all_ys.extend([bb[1], bb[3]])
+    
+    total_bbox = (min(all_xs), min(all_ys), max(all_xs), max(all_ys)) if all_xs else (0,0,0,0)
+
     return {
         "path": str(path),
         "types": dict(types),
@@ -108,6 +119,7 @@ def lint(path: Path):
         "dangling_endpoints": dangling,
         "bbox_overlaps": overlaps,
         "total_entities": sum(types.values()),
+        "bbox": total_bbox,
     }
 
 
@@ -130,6 +142,7 @@ def main(argv):
             any_bad = True
         print(f"[{status}] {p.name}")
         print(f"    entities: {r['total_entities']}  types: {r['types']}")
+        print(f"    bbox: ({r['bbox'][0]:.2f}, {r['bbox'][1]:.2f}) to ({r['bbox'][2]:.2f}, {r['bbox'][3]:.2f}) size {r['bbox'][2]-r['bbox'][0]:.2f}x{r['bbox'][3]-r['bbox'][1]:.2f}")
         if flags:
             print(f"    flags: {', '.join(flags)}")
     sys.exit(1 if any_bad else 0)
