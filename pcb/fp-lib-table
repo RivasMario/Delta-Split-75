@@ -1,3 +1,4 @@
-(fp_lib_table
-  (lib (name "Keebio-Parts")(type "KiCad")(uri "${KIPRJMOD}/../../NCKiser_refs/Keebio-Parts.pretty")(options "")(descr ""))
+﻿(fp_lib_table
+  (lib (name "Keebio-Parts")(type "KiCad")(uri "/../../NCKiser_refs/Keebio-Parts.pretty")(options "")(descr ""))
+  (lib (name "marbastlib-mx")(type "KiCad")(uri "/../../NCKiser_refs/marbastlib/marbastlib-mx.pretty")(options "")(descr ""))
 )

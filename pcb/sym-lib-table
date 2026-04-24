@@ -1,0 +1,5 @@
+﻿(sym_lib_table
+  (lib (name "marbastlib-promicroish")(type "KiCad")(uri "/../../NCKiser_refs/ebastler_marbastlib/symbols/marbastlib-promicroish.kicad_sym")(options "")(descr ""))
+  (lib (name "marbastlib-various")(type "KiCad")(uri "/../../NCKiser_refs/ebastler_marbastlib/symbols/marbastlib-various.kicad_sym")(options "")(descr ""))
+  (lib (name "marbastlib-mx")(type "KiCad")(uri "/../../NCKiser_refs/ebastler_marbastlib/symbols/marbastlib-mx.kicad_sym")(options "")(descr ""))
+)
